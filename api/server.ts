@@ -1,50 +1,34 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import type { MatchData, Player, WSMessageType } from '../src/types/match';
 
-const PLAYERS = [
-  { name: '樊振东', country: 'CHN' },
-  { name: '马龙', country: 'CHN' },
-  { name: '张本智和', country: 'JPN' },
-  { name: '特鲁尔斯·莫雷加德', country: 'SWE' },
-  { name: '雨果·卡尔德拉诺', country: 'BRA' },
-  { name: '林昀儒', country: 'TPE' },
-  { name: '迪米特里·奥恰洛夫', country: 'GER' },
-  { name: '费利克斯·勒布伦', country: 'FRA' },
-  { name: '林钟勋', country: 'KOR' },
-  { name: '邱党', country: 'GER' },
+const PLAYERS: Player[] = [
+  { name: '樊振东', country: 'CHN', score: 0 },
+  { name: '马龙', country: 'CHN', score: 0 },
+  { name: '张本智和', country: 'JPN', score: 0 },
+  { name: '特鲁尔斯·莫雷加德', country: 'SWE', score: 0 },
+  { name: '雨果·卡尔德拉诺', country: 'BRA', score: 0 },
+  { name: '林昀儒', country: 'TPE', score: 0 },
+  { name: '迪米特里·奥恰洛夫', country: 'GER', score: 0 },
+  { name: '费利克斯·勒布伦', country: 'FRA', score: 0 },
+  { name: '林钟勋', country: 'KOR', score: 0 },
+  { name: '邱党', country: 'GER', score: 0 },
 ];
 
 const TABLE_NAMES = ['1号台', '2号台', '3号台', '4号台', '5号台'];
 
-interface GameState {
-  tableId: number;
-  tableName: string;
-  player1: { name: string; country: string; score: number };
-  player2: { name: string; country: string; score: number };
-  currentGame: number;
-  games: { player1Score: number; player2Score: number }[];
-  serving: 1 | 2;
-  events: { type: string; player: 1 | 2; timestamp: number; detail?: string }[];
-  isGamePoint: boolean;
-  isMatchPoint: boolean;
-  isFinished: boolean;
-  rallyScores: { player1: number; player2: number }[];
-  gameWins1: number;
-  gameWins2: number;
-}
-
 interface WSMessageData {
-  type: string;
+  type: WSMessageType;
   sequence?: number;
   tableId?: number;
-  match?: GameState;
-  updates?: GameState[];
+  match?: MatchData;
+  updates?: MatchData[];
   timestamp?: number;
 }
 
 let sequence = 0;
 const messageHistory: { sequence: number; data: WSMessageData }[] = [];
 
-function createMatches(): GameState[] {
+function createMatches(): MatchData[] {
   const used = new Set<number>();
   const pick = () => {
     let idx: number;
@@ -77,25 +61,27 @@ function createMatches(): GameState[] {
   });
 }
 
-function isGamePoint(state: GameState): boolean {
+function isGamePoint(state: MatchData): boolean {
   if (state.isFinished) return false;
   const g = state.games[state.currentGame - 1];
   if (!g) return false;
   const s1 = g.player1Score;
   const s2 = g.player2Score;
-  if (s1 >= 10 && s2 >= 10) return true;
-  return s1 === 10 || s2 === 10;
-}
-
-function isMatchPoint(state: GameState): boolean {
-  if (!isGamePoint(state)) return false;
-  const neededWins = Math.ceil(7 / 2);
-  if (state.gameWins1 === neededWins - 1 && state.games[state.currentGame - 1].player1Score >= 10) return true;
-  if (state.gameWins2 === neededWins - 1 && state.games[state.currentGame - 1].player2Score >= 10) return true;
+  if (s1 >= 10 && s1 > s2) return true;
+  if (s2 >= 10 && s2 > s1) return true;
   return false;
 }
 
-function simulatePoint(state: GameState): GameState {
+function isMatchPoint(state: MatchData): boolean {
+  if (!isGamePoint(state)) return false;
+  const neededWins = Math.ceil(7 / 2);
+  const g = state.games[state.currentGame - 1];
+  if (state.gameWins1 === neededWins - 1 && g.player1Score >= 10 && g.player1Score > g.player2Score) return true;
+  if (state.gameWins2 === neededWins - 1 && g.player2Score >= 10 && g.player2Score > g.player1Score) return true;
+  return false;
+}
+
+function simulatePoint(state: MatchData): MatchData {
   if (state.isFinished) return state;
 
   const newState = { ...state, games: state.games.map((g) => ({ ...g })), events: [...state.events] };
@@ -225,10 +211,10 @@ function main() {
         if (msg.type === 'reconnect' && typeof msg.lastSequence === 'number') {
           const missed = messageHistory.filter((h) => h.sequence > msg.lastSequence);
           if (missed.length > 0) {
-            const updates: GameState[] = [];
-            const seen = new Map<number, GameState>();
+            const updates: MatchData[] = [];
+            const seen = new Map<number, MatchData>();
             for (const h of missed) {
-              if (h.data.type === 'match_update' && h.data.match) {
+              if (h.data.type === 'match_update' && h.data.match && h.data.tableId !== undefined) {
                 seen.set(h.data.tableId, h.data.match);
               }
             }
@@ -266,7 +252,7 @@ function main() {
     if (matches[idx].isFinished) {
       const allFinished = matches.every((m) => m.isFinished);
       if (allFinished) {
-        matches.forEach((m, i) => {
+        matches.forEach((_, i) => {
           Object.assign(matches[i], createMatches()[i] || createMatches()[0]);
         });
       }

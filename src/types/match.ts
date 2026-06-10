@@ -9,8 +9,10 @@ export interface GameScore {
   player2Score: number;
 }
 
+export type MatchEventType = 'point' | 'timeout' | 'challenge' | 'game_win' | 'match_win';
+
 export interface MatchEvent {
-  type: 'point' | 'timeout' | 'challenge' | 'game_win' | 'match_win';
+  type: MatchEventType;
   player: 1 | 2;
   timestamp: number;
   detail?: string;
@@ -46,8 +48,10 @@ export interface WSState {
   showBanner: boolean;
 }
 
+export type WSMessageType = 'match_update' | 'batch_update' | 'heartbeat';
+
 export interface WSMessage {
-  type: 'match_update' | 'batch_update' | 'heartbeat';
+  type: WSMessageType;
   sequence?: number;
   tableId?: number;
   match?: MatchData;
@@ -55,8 +59,10 @@ export interface WSMessage {
   timestamp?: number;
 }
 
+export type WSClientMessageType = 'subscribe' | 'reconnect';
+
 export interface WSClientMessage {
-  type: 'subscribe' | 'reconnect';
+  type: WSClientMessageType;
   tableIds?: number[];
   lastSequence?: number;
 }
