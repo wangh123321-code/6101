@@ -1,0 +1,30 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      ws-server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ws-server:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const ws = new (require('ws'))('ws://localhost:3001'); ws.on('open', () => { ws.close(); process.exit(0); }); setTimeout(() => process.exit(1), 3000);"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
