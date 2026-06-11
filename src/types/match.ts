@@ -66,3 +66,25 @@ export interface WSClientMessage {
   tableIds?: number[];
   lastSequence?: number;
 }
+
+export type ReplayClipType = 'game_point' | 'match_point';
+
+export interface ReplayClip {
+  id: string;
+  tableId: number;
+  type: ReplayClipType;
+  rallyScores: RallyPoint[];
+  triggerIndex: number;
+  gameNumber: number;
+  timestamp: number;
+  sequence: number;
+}
+
+export interface ReplayState {
+  isReplayMode: boolean;
+  currentClip: ReplayClip | null;
+  currentStep: number;
+  isPlaying: boolean;
+  clipsByTable: Record<number, ReplayClip[]>;
+  activeTableId: number | null;
+}

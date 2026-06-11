@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useMatchStore } from '@/store/matchStore';
-import type { WSMessage, WSClientMessage } from '@/types/match';
+import type { WSMessage, WSClientMessage, MatchData } from '@/types/match';
 
 const WS_URL = typeof window !== 'undefined'
   ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}${window.location.port ? `:${window.location.port}` : ''}/ws`
@@ -17,8 +17,9 @@ export function useWebSocket() {
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const manualCloseRef = useRef(false);
+  const missedHistoryRef = useRef<Array<{ sequence: number; match: MatchData }>>([]);
 
-  const { updateMatch, batchUpdate, setWsState } = useMatchStore();
+  const { updateMatch, batchUpdate, setWsState, rebuildClipsFromHistory } = useMatchStore();
 
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
@@ -50,23 +51,29 @@ export function useWebSocket() {
         }
 
         if (msg.type === 'match_update' && msg.match) {
-          updateMatch(msg.match);
+          updateMatch(msg.match, msg.sequence);
           if (msg.sequence) {
             setWsState({ lastSequence: msg.sequence });
           }
         }
 
         if (msg.type === 'batch_update' && msg.updates) {
-          batchUpdate(msg.updates);
+          const seqs = msg.updates.map((_, i) => (msg.sequence ?? 0) + i);
+          batchUpdate(msg.updates, seqs);
           if (msg.sequence) {
             setWsState({ lastSequence: msg.sequence });
+          }
+
+          if (missedHistoryRef.current.length > 0) {
+            rebuildClipsFromHistory(missedHistoryRef.current);
+            missedHistoryRef.current = [];
           }
         }
       } catch {
         // ignore parse errors
       }
     },
-    [updateMatch, batchUpdate, setWsState, resetHeartbeat]
+    [updateMatch, batchUpdate, setWsState, resetHeartbeat, rebuildClipsFromHistory]
   );
 
   const connect = useCallback(() => {
@@ -130,14 +137,60 @@ export function useWebSocket() {
 
   const reconnectWithDataCatchup = useCallback(() => {
     const state = useMatchStore.getState().wsState;
-    const catchupMsg: WSClientMessage = {
-      type: 'reconnect',
-      lastSequence: state.lastSequence,
-    };
+    const lastSeq = state.lastSequence;
+
+    missedHistoryRef.current = [];
+
+    const originalHandler = wsRef.current?.onmessage;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const catchupMsg: WSClientMessage = {
+        type: 'reconnect',
+        lastSequence: lastSeq,
+      };
+
+      let collectTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const collectHandler = (event: MessageEvent) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data);
+          if (msg.type === 'match_update' && msg.match && msg.sequence) {
+            if (msg.sequence > lastSeq) {
+              missedHistoryRef.current.push({ sequence: msg.sequence, match: msg.match });
+            }
+          }
+          if (msg.type === 'batch_update' && msg.updates && msg.sequence) {
+            for (let i = 0; i < msg.updates.length; i++) {
+              const match = msg.updates[i];
+              const seq = msg.sequence + i;
+              if (seq > lastSeq) {
+                missedHistoryRef.current.push({ sequence: seq, match });
+              }
+            }
+          }
+
+          if (collectTimer) clearTimeout(collectTimer);
+          collectTimer = setTimeout(() => {
+            if (wsRef.current) {
+              wsRef.current.onmessage = originalHandler ?? null;
+            }
+            if (missedHistoryRef.current.length > 0) {
+              rebuildClipsFromHistory(missedHistoryRef.current);
+              missedHistoryRef.current = [];
+            }
+          }, 500);
+
+          if (originalHandler && wsRef.current) {
+            originalHandler.call(wsRef.current, event as unknown as MessageEvent<any>);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      wsRef.current.onmessage = collectHandler;
       wsRef.current.send(JSON.stringify(catchupMsg));
     }
-  }, []);
+  }, [rebuildClipsFromHistory]);
 
   useEffect(() => {
     manualCloseRef.current = false;

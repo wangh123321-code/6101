@@ -1,14 +1,16 @@
 import type { MatchData } from '@/types/match';
 import { useMatchStore } from '@/store/matchStore';
-import { Radio } from 'lucide-react';
+import { Radio, PlayCircle } from 'lucide-react';
 
 interface TableCardProps {
   match: MatchData;
 }
 
 export default function TableCard({ match }: TableCardProps) {
-  const { selectedTableIds, selectTable } = useMatchStore();
+  const { selectedTableIds, selectTable, replay, enterReplayMode } = useMatchStore();
   const isSelected = selectedTableIds.includes(match.tableId);
+  const clips = replay.clipsByTable[match.tableId] ?? [];
+  const hasClips = clips.length > 0;
 
   const criticalClass =
     match.isMatchPoint
@@ -78,6 +80,30 @@ export default function TableCard({ match }: TableCardProps) {
             {i < match.games.length - 1 && <span className="mx-0.5">·</span>}
           </span>
         ))}
+      </div>
+
+      <div className="mt-1.5 lg:mt-2 flex items-center justify-between">
+        <span className="text-[9px] text-board-muted font-body">
+          {hasClips ? `${clips.length} 条关键球` : ''}
+        </span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasClips) {
+              enterReplayMode(match.tableId, clips[clips.length - 1].id);
+            }
+          }}
+          disabled={!hasClips}
+          className={`inline-flex items-center gap-1 px-1.5 py-1 rounded text-[9px] font-display font-semibold transition-all
+            ${hasClips
+              ? 'bg-board-accent/15 text-board-accent hover:bg-board-accent/25 hover:shadow-[0_0_8px_rgba(0,229,255,0.3)]'
+              : 'bg-board-border/30 text-board-border/50 cursor-not-allowed'
+            }`}
+          title={hasClips ? '回放关键球' : '暂无关键球'}
+        >
+          <PlayCircle className="w-3 h-3" />
+          回放
+        </button>
       </div>
     </button>
   );
